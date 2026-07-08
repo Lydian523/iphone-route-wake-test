@@ -14,6 +14,7 @@ const els = {
   speed: document.getElementById('speed'),
   accuracy: document.getElementById('accuracy'),
   distance: document.getElementById('distance'),
+  guidance: document.getElementById('guidance'),
   status: document.getElementById('status'),
   wakeStatus: document.getElementById('wakeStatus'),
   pointCount: document.getElementById('pointCount'),
@@ -27,13 +28,17 @@ const els = {
   blackGps: document.getElementById('blackGps'),
   blackStatus: document.getElementById('blackStatus'),
   blackDistance: document.getElementById('blackDistance'),
+  blackGuidance: document.getElementById('blackGuidance'),
   holdRing: document.getElementById('holdRing'),
   copyLogBtn: document.getElementById('copyLogBtn'),
   clearLogBtn: document.getElementById('clearLogBtn'),
+  clearRouteBtn: document.getElementById('clearRouteBtn'),
 };
 
 let route = [];
 let currentPos = null;
+let previousPos = null;
+let lastHeadingDeg = NaN;
 let watchId = null;
 let wakeLock = null;
 let fixCount = 0;
@@ -45,6 +50,12 @@ let holdStart = 0;
 let holdAnim = null;
 let lastFixTime = 0;
 let ageTimer = null;
+let offRouteActive = false;
+let lastNonNormalLevel = 'normal';
+let lastRouteName = '';
+
+const STORAGE_ROUTE_KEY = 'routeWakeTest.savedRoute.v6';
+const STORAGE_SETTINGS_KEY = 'routeWakeTest.settings.v6';
 
 const ctx = els.canvas.getContext('2d');
 
@@ -100,6 +111,71 @@ function startAgeTimer() {
     updateGpsPanel(acc, ageMs, NaN);
     if (ageMs > 30000) setStatus('定位過舊', 'status-danger');
   }, 5000);
+}
+
+
+function saveSettings() {
+  const data = {
+    warnM: els.warnM.value,
+    offM: els.offM.value,
+    badM: els.badM.value,
+    soundMode: els.soundMode.value,
+  };
+  localStorage.setItem(STORAGE_SETTINGS_KEY, JSON.stringify(data));
+}
+
+function loadSettings() {
+  try {
+    const raw = localStorage.getItem(STORAGE_SETTINGS_KEY);
+    if (!raw) return;
+    const data = JSON.parse(raw);
+    if (data.warnM) els.warnM.value = data.warnM;
+    if (data.offM) els.offM.value = data.offM;
+    if (data.badM) els.badM.value = data.badM;
+    if (data.soundMode) els.soundMode.value = data.soundMode;
+  } catch (err) {
+    log(`設定讀取失敗：${err.message}`);
+  }
+}
+
+function saveRouteToStorage(name, points) {
+  const payload = {
+    version: 6,
+    savedAt: Date.now(),
+    name,
+    points,
+  };
+  localStorage.setItem(STORAGE_ROUTE_KEY, JSON.stringify(payload));
+}
+
+function loadRouteFromStorage() {
+  try {
+    const raw = localStorage.getItem(STORAGE_ROUTE_KEY);
+    if (!raw) return false;
+    const data = JSON.parse(raw);
+    if (!data || !Array.isArray(data.points) || data.points.length < 2) return false;
+    route = data.points.filter(p => Number.isFinite(p.lat) && Number.isFinite(p.lon));
+    if (route.length < 2) return false;
+    lastRouteName = data.name || '已保存路線';
+    els.pointCount.textContent = String(route.length);
+    draw();
+    const t = data.savedAt ? new Date(data.savedAt).toLocaleString('zh-TW', { hour12: false }) : '未知時間';
+    log(`已自動恢復上次路線：${lastRouteName}，路線點 ${route.length}，保存時間 ${t}`);
+    return true;
+  } catch (err) {
+    log(`已存路線讀取失敗：${err.message}`);
+    return false;
+  }
+}
+
+function clearSavedRoute() {
+  localStorage.removeItem(STORAGE_ROUTE_KEY);
+  route = [];
+  lastRouteName = '';
+  els.pointCount.textContent = '0';
+  setStatus('已清除路線');
+  draw();
+  log('已清除本機保存路線。頁面重啟後不會自動恢復。');
 }
 
 function metersText(n) {
@@ -210,32 +286,98 @@ function equirectProject(p, originLat) {
   };
 }
 
-function distancePointToSegmentMeters(p, a, b) {
-  const originLat = p.lat;
-  const pp = equirectProject(p, originLat);
-  const aa = equirectProject(a, originLat);
-  const bb = equirectProject(b, originLat);
-  const vx = bb.x - aa.x;
-  const vy = bb.y - aa.y;
-  const wx = pp.x - aa.x;
-  const wy = pp.y - aa.y;
-  const c1 = vx * wx + vy * wy;
-  const c2 = vx * vx + vy * vy;
-  let t = c2 === 0 ? 0 : c1 / c2;
-  t = Math.max(0, Math.min(1, t));
-  const cx = aa.x + t * vx;
-  const cy = aa.y + t * vy;
-  return Math.hypot(pp.x - cx, pp.y - cy);
+function toDeg(rad) { return rad * 180 / Math.PI; }
+function normDeg(deg) { return ((deg % 360) + 360) % 360; }
+function signedAngleDiffDeg(target, source) {
+  return ((target - source + 540) % 360) - 180;
+}
+function bearingDeg(a, b) {
+  const lat1 = toRad(a.lat);
+  const lat2 = toRad(b.lat);
+  const dLon = toRad(b.lon - a.lon);
+  const y = Math.sin(dLon) * Math.cos(lat2);
+  const x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLon);
+  return normDeg(toDeg(Math.atan2(y, x)));
+}
+function pointFromProjected(x, y, originLat) {
+  const R = 6371000;
+  return {
+    lat: toDeg(y / R),
+    lon: toDeg(x / (R * Math.cos(toRad(originLat)))),
+  };
 }
 
-function nearestDistanceToRouteMeters(p, pts) {
-  if (!pts || pts.length < 2) return Infinity;
-  let best = Infinity;
+function nearestRouteInfo(p, pts) {
+  if (!pts || pts.length < 2) return { distance: Infinity, point: null, segmentIndex: -1, routeBearing: NaN };
+  let best = { distance: Infinity, point: null, segmentIndex: -1, routeBearing: NaN, t: 0 };
+  const originLat = p.lat;
+  const pp = equirectProject(p, originLat);
   for (let i = 0; i < pts.length - 1; i++) {
-    const d = distancePointToSegmentMeters(p, pts[i], pts[i + 1]);
-    if (d < best) best = d;
+    const a = pts[i];
+    const b = pts[i + 1];
+    const aa = equirectProject(a, originLat);
+    const bb = equirectProject(b, originLat);
+    const vx = bb.x - aa.x;
+    const vy = bb.y - aa.y;
+    const wx = pp.x - aa.x;
+    const wy = pp.y - aa.y;
+    const c1 = vx * wx + vy * wy;
+    const c2 = vx * vx + vy * vy;
+    let t = c2 === 0 ? 0 : c1 / c2;
+    t = Math.max(0, Math.min(1, t));
+    const cx = aa.x + t * vx;
+    const cy = aa.y + t * vy;
+    const distance = Math.hypot(pp.x - cx, pp.y - cy);
+    if (distance < best.distance) {
+      best = {
+        distance,
+        point: pointFromProjected(cx, cy, originLat),
+        segmentIndex: i,
+        routeBearing: bearingDeg(a, b),
+        t,
+      };
+    }
   }
   return best;
+}
+
+function relativeDirectionText(targetBearing, heading) {
+  if (!Number.isFinite(targetBearing) || !Number.isFinite(heading)) return '';
+  const diff = signedAngleDiffDeg(targetBearing, heading);
+  const abs = Math.abs(diff);
+  if (abs <= 35) return '前方';
+  if (abs >= 145) return '後方';
+  return diff > 0 ? '右方' : '左方';
+}
+
+function buildReturnGuidance(info, state, gpsQ) {
+  if (!info || !Number.isFinite(info.distance)) return '尚未取得路線距離。';
+  if (!gpsQ || !gpsQ.reliable) return 'GPS 品質不足，暫不提供方向提示。';
+
+  const heading = lastHeadingDeg;
+  const routeDir = Number.isFinite(info.routeBearing) ? info.routeBearing : NaN;
+  const toRouteDir = info.point ? bearingDeg(currentPos, info.point) : NaN;
+  const routeDistance = Math.round(info.distance);
+  const warn = Number(els.warnM.value) || 30;
+
+  if (state.level === 'normal') {
+    if (Number.isFinite(heading) && Number.isFinite(routeDir) && routeDistance <= warn) {
+      const reverseDiff = Math.abs(signedAngleDiffDeg(routeDir, heading));
+      const speedText = els.speed.textContent || '';
+      const speedNum = Number(speedText.replace(/[^0-9.]/g, ''));
+      if (reverseDiff >= 140 && Number.isFinite(speedNum) && speedNum >= 2.5) {
+        return '你可能走反了，建議先停下確認方向，必要時往回走。';
+      }
+    }
+    return '你在正確路徑附近，繼續前進。';
+  }
+
+  const rel = relativeDirectionText(toRouteDir, heading);
+  if (rel === '前方') return `正確路線在前方，約 ${routeDistance} 公尺。`;
+  if (rel === '後方') return `正確路線在後方，可能走過頭，建議往回走約 ${routeDistance} 公尺。`;
+  if (rel === '右方') return `正確路線在你右方，約 ${routeDistance} 公尺。`;
+  if (rel === '左方') return `正確路線在你左方，約 ${routeDistance} 公尺。`;
+  return `請往最近路線方向移動，距離約 ${routeDistance} 公尺。`;
 }
 
 function evaluateDistance(d) {
@@ -249,19 +391,39 @@ function evaluateDistance(d) {
   return { level: 'normal', text: '正常', cls: 'status-ok' };
 }
 
-function maybeAlert(state, d, gpsQ = null) {
+function maybeAlert(state, d, gpsQ = null, guidance = '') {
   const now = Date.now();
+  const wasOffRoute = offRouteActive;
+  const isOffRoute = ['warn', 'off', 'bad'].includes(state.level);
+  const isBackOnRoute = wasOffRoute && state.level === 'normal';
   const levelChanged = state.level !== lastAlertLevel;
   const repeatDue = now - lastAlertAt > 30000;
   const canAlert = !gpsQ || gpsQ.allowLoudAlert || (gpsQ.level === 'ok' && state.level === 'bad');
-  if (['warn', 'off', 'bad'].includes(state.level) && canAlert && (levelChanged || repeatDue)) {
+
+  if (isBackOnRoute) {
+    offRouteActive = false;
+    lastAlertLevel = 'normal';
+    lastAlertAt = now;
+    const msg = `已回到正確路徑，距離路線 ${Math.round(d)} 公尺`;
+    playAlert(msg, 'normal');
+    log(`返回提醒：${msg}`);
+    return;
+  }
+
+  if (isOffRoute) {
+    offRouteActive = true;
+    lastNonNormalLevel = state.level;
+  }
+
+  if (isOffRoute && canAlert && (levelChanged || repeatDue)) {
     lastAlertLevel = state.level;
     lastAlertAt = now;
     const gpsTail = gpsQ ? `，GPS ${gpsQ.label}` : '';
-    const msg = `${state.text}，距離路線 ${Math.round(d)} 公尺${gpsTail}`;
+    const msg = `${state.text}，距離路線 ${Math.round(d)} 公尺${gpsTail}。${guidance || ''}`;
     playAlert(msg, state.level);
     log(`提醒：${msg}`);
   }
+
   if (state.level === 'normal') lastAlertLevel = 'normal';
 }
 
@@ -272,12 +434,12 @@ function getAudioCtx() {
 
 function beep(level = 'warn') {
   const ac = getAudioCtx();
-  const count = level === 'bad' ? 4 : level === 'off' ? 3 : 2;
+  const count = level === 'normal' ? 1 : level === 'bad' ? 4 : level === 'off' ? 3 : 2;
   for (let i = 0; i < count; i++) {
     const osc = ac.createOscillator();
     const gain = ac.createGain();
     osc.type = 'sine';
-    osc.frequency.value = level === 'bad' ? 1200 : 880;
+    osc.frequency.value = level === 'normal' ? 660 : level === 'bad' ? 1200 : 880;
     gain.gain.value = 0.0001;
     osc.connect(gain);
     gain.connect(ac.destination);
@@ -378,17 +540,27 @@ function onGeoError(err) {
 function onPosition(pos) {
   fixCount += 1;
   lastFixTime = Date.now();
+  previousPos = currentPos;
   currentPos = { lat: pos.coords.latitude, lon: pos.coords.longitude };
   const acc = pos.coords.accuracy;
   const speedMps = pos.coords.speed;
+  if (Number.isFinite(pos.coords.heading)) {
+    lastHeadingDeg = pos.coords.heading;
+  } else if (previousPos && Number.isFinite(speedMps) && speedMps >= 0.7) {
+    lastHeadingDeg = bearingDeg(previousPos, currentPos);
+  }
   const gpsQ = updateGpsPanel(acc, 0, speedMps);
   els.accuracy.textContent = `${Math.round(acc)} m`;
   els.fixCount.textContent = String(fixCount);
 
-  const d = route.length >= 2 ? nearestDistanceToRouteMeters(currentPos, route) : Infinity;
+  const info = route.length >= 2 ? nearestRouteInfo(currentPos, route) : { distance: Infinity };
+  const d = info.distance;
   els.distance.textContent = metersText(d);
   els.blackDistance.textContent = `距離路線：${metersText(d)}`;
   const state = evaluateDistance(d);
+  const guidance = route.length >= 2 ? buildReturnGuidance(info, state, gpsQ) : '尚未匯入路線。';
+  els.guidance.textContent = guidance;
+  els.blackGuidance.textContent = `提示：${guidance}`;
   if (!gpsQ.reliable && route.length >= 2) {
     setStatus('GPS 不可靠，暫不警報', 'status-danger');
   } else if (gpsQ.level === 'ok' && ['warn', 'off', 'bad'].includes(state.level)) {
@@ -396,11 +568,11 @@ function onPosition(pos) {
   } else {
     setStatus(state.text, state.cls);
   }
-  maybeAlert(state, d, gpsQ);
+  maybeAlert(state, d, gpsQ, guidance);
   draw();
 
   if (fixCount === 1) log(`首次定位：GPS ${gpsQ.label}，精度 ${Math.round(acc)} m`);
-  if (fixCount % 10 === 0) log(`定位 ${fixCount} 次，GPS ${gpsQ.label}，精度 ${Math.round(acc)} m，距離路線 ${metersText(d)}`);
+  if (fixCount % 10 === 0) log(`定位 ${fixCount} 次，GPS ${gpsQ.label}，精度 ${Math.round(acc)} m，距離路線 ${metersText(d)}，${guidance}`);
 }
 
 function routeBounds(points) {
@@ -466,7 +638,9 @@ els.gpxInput.addEventListener('change', async e => {
     const text = await file.text();
     route = parseRouteFile(text, file.name);
     els.pointCount.textContent = String(route.length);
-    log(`路線匯入成功：${file.name}，路線點 ${route.length}`);
+    lastRouteName = file.name;
+    saveRouteToStorage(file.name, route);
+    log(`路線匯入成功並已保存：${file.name}，路線點 ${route.length}`);
     draw();
   } catch (err) {
     log(`路線匯入失敗：${err.message}`);
@@ -484,6 +658,11 @@ els.copyLogBtn.addEventListener('click', async () => {
   log('已嘗試複製紀錄');
 });
 els.clearLogBtn.addEventListener('click', () => { els.log.textContent = ''; });
+els.clearRouteBtn.addEventListener('click', clearSavedRoute);
+[els.warnM, els.offM, els.badM, els.soundMode].forEach(el => {
+  el.addEventListener('change', saveSettings);
+  el.addEventListener('input', saveSettings);
+});
 
 function beginHold() {
   holdStart = Date.now();
@@ -525,5 +704,7 @@ if ('serviceWorker' in navigator) {
   });
 }
 
-draw();
-log('v4 GPS 診斷版：請先匯入 GPX / KML，然後按「開始定位」與「啟用 Wake Lock」。');
+loadSettings();
+const restored = loadRouteFromStorage();
+if (!restored) draw();
+log('v6 返回提示版：路線自動保存，返回正確路徑會提醒，偏離時提供回到路線方向提示。');

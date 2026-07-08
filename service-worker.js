@@ -1,10 +1,11 @@
-const CACHE_NAME = 'route-wake-test-v4';
+const CACHE_NAME = 'route-wake-test-v6';
 const ASSETS = [
   './',
   './index.html',
   './style.css',
   './app.js',
   './manifest.webmanifest',
+  './service-worker.js',
   './icon.svg'
 ];
 
@@ -28,3 +29,4 @@ self.addEventListener('fetch', event => {
     return resp;
   }).catch(() => caches.match(event.request)));
 });
+
