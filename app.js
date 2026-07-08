@@ -80,6 +80,68 @@ function parseGpx(text) {
   return simplifyEveryN(pts, Math.ceil(pts.length / 3000));
 }
 
+
+function parseKmlCoordinatesText(text) {
+  const pts = [];
+  text.trim().split(/\s+/).forEach(token => {
+    const parts = token.split(',').map(Number);
+    const lon = parts[0];
+    const lat = parts[1];
+    if (Number.isFinite(lat) && Number.isFinite(lon)) pts.push({ lat, lon });
+  });
+  return pts;
+}
+
+function parseKml(text) {
+  const doc = new DOMParser().parseFromString(text, 'application/xml');
+  const parseError = doc.querySelector('parsererror');
+  if (parseError) throw new Error('KML 解析失敗');
+
+  let pts = [];
+
+  // 優先讀取 LineString；這才是路線線段。Point 通常只是景點，不適合拿來當偏離路線。
+  const lineStrings = Array.from(doc.getElementsByTagName('LineString'));
+  for (const line of lineStrings) {
+    const coordsNode = line.getElementsByTagName('coordinates')[0];
+    if (!coordsNode) continue;
+    const linePts = parseKmlCoordinatesText(coordsNode.textContent || '');
+    if (linePts.length >= 2) {
+      if (pts.length && linePts.length) {
+        const last = pts[pts.length - 1];
+        const first = linePts[0];
+        if (last.lat !== first.lat || last.lon !== first.lon) pts.push(first);
+        pts.push(...linePts.slice(1));
+      } else {
+        pts.push(...linePts);
+      }
+    }
+  }
+
+  // Google Earth 有時使用 gx:Track，以 <gx:coord>lon lat alt</gx:coord> 儲存軌跡。
+  if (pts.length < 2) {
+    const coordNodes = Array.from(doc.getElementsByTagName('gx:coord'));
+    coordNodes.forEach(node => {
+      const parts = (node.textContent || '').trim().split(/\s+/).map(Number);
+      const lon = parts[0];
+      const lat = parts[1];
+      if (Number.isFinite(lat) && Number.isFinite(lon)) pts.push({ lat, lon });
+    });
+  }
+
+  if (pts.length < 2) {
+    throw new Error('KML 內找不到足夠的 LineString 路線點。請確認匯出的是路線，不只是景點標記。');
+  }
+  return simplifyEveryN(pts, Math.ceil(pts.length / 3000));
+}
+
+function parseRouteFile(text, fileName = '') {
+  const name = fileName.toLowerCase();
+  const head = text.slice(0, 300).toLowerCase();
+  if (name.endsWith('.kml') || head.includes('<kml')) return parseKml(text);
+  if (name.endsWith('.gpx') || head.includes('<gpx')) return parseGpx(text);
+  throw new Error('不支援的檔案格式。請匯入 .gpx 或 .kml。');
+}
+
 function simplifyEveryN(points, n) {
   if (n <= 1) return points;
   const out = [];
@@ -299,7 +361,7 @@ function draw() {
   if (!b) {
     ctx.fillStyle = '#777';
     ctx.font = '28px sans-serif';
-    ctx.fillText('請先匯入 GPX', 40, 80);
+    ctx.fillText('請先匯入 GPX / KML', 40, 80);
     return;
   }
   const pad = 30;
@@ -338,12 +400,12 @@ els.gpxInput.addEventListener('change', async e => {
   if (!file) return;
   try {
     const text = await file.text();
-    route = parseGpx(text);
+    route = parseRouteFile(text, file.name);
     els.pointCount.textContent = String(route.length);
-    log(`GPX 匯入成功：${file.name}，路線點 ${route.length}`);
+    log(`路線匯入成功：${file.name}，路線點 ${route.length}`);
     draw();
   } catch (err) {
-    log(`GPX 匯入失敗：${err.message}`);
+    log(`路線匯入失敗：${err.message}`);
     alert(err.message);
   }
 });
@@ -400,4 +462,4 @@ if ('serviceWorker' in navigator) {
 }
 
 draw();
-log('請先匯入 GPX，然後按「開始定位」與「啟用 Wake Lock」。');
+log('請先匯入 GPX / KML，然後按「開始定位」與「啟用 Wake Lock」。');
