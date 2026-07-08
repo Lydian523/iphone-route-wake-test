@@ -8,6 +8,10 @@ const els = {
   blackBtn: document.getElementById('blackBtn'),
   testSoundBtn: document.getElementById('testSoundBtn'),
   soundMode: document.getElementById('soundMode'),
+  gpsQuality: document.getElementById('gpsQuality'),
+  gpsExplain: document.getElementById('gpsExplain'),
+  fixAge: document.getElementById('fixAge'),
+  speed: document.getElementById('speed'),
   accuracy: document.getElementById('accuracy'),
   distance: document.getElementById('distance'),
   status: document.getElementById('status'),
@@ -20,6 +24,7 @@ const els = {
   offM: document.getElementById('offM'),
   badM: document.getElementById('badM'),
   blackScreen: document.getElementById('blackScreen'),
+  blackGps: document.getElementById('blackGps'),
   blackStatus: document.getElementById('blackStatus'),
   blackDistance: document.getElementById('blackDistance'),
   holdRing: document.getElementById('holdRing'),
@@ -38,6 +43,8 @@ let audioCtx = null;
 let holdTimer = null;
 let holdStart = 0;
 let holdAnim = null;
+let lastFixTime = 0;
+let ageTimer = null;
 
 const ctx = els.canvas.getContext('2d');
 
@@ -50,6 +57,49 @@ function setStatus(text, cls = '') {
   els.status.textContent = text;
   els.status.className = cls;
   els.blackStatus.textContent = text;
+}
+
+
+function classifyGpsQuality(acc, ageMs) {
+  if (!Number.isFinite(acc)) {
+    return { level: 'unknown', label: '未知', cls: 'status-muted', reliable: false, allowLoudAlert: false, text: 'GPS 尚未回報精度，偏離判斷暫不可靠。' };
+  }
+  if (ageMs > 30000) {
+    return { level: 'stale', label: '過舊', cls: 'status-danger', reliable: false, allowLoudAlert: false, text: `定位已經 ${Math.round(ageMs / 1000)} 秒沒有更新，暫停偏離警報。` };
+  }
+  if (acc <= 15) {
+    return { level: 'good', label: '良好', cls: 'status-ok', reliable: true, allowLoudAlert: true, text: `GPS 良好，精度約 ±${Math.round(acc)} 公尺，可正常判斷偏離。` };
+  }
+  if (acc <= 35) {
+    return { level: 'ok', label: '普通', cls: 'status-warn', reliable: true, allowLoudAlert: false, text: `GPS 普通，精度約 ±${Math.round(acc)} 公尺；偏離提醒僅供參考。` };
+  }
+  if (acc <= 80) {
+    return { level: 'poor', label: '差', cls: 'status-danger', reliable: false, allowLoudAlert: false, text: `GPS 偏差大，精度約 ±${Math.round(acc)} 公尺；可能誤報，暫停大聲偏離警報。` };
+  }
+  return { level: 'bad', label: '很差', cls: 'status-danger', reliable: false, allowLoudAlert: false, text: `GPS 很差，精度約 ±${Math.round(acc)} 公尺；停止偏離判斷，先到開闊處再測。` };
+}
+
+function updateGpsPanel(acc, ageMs, speedMps) {
+  const q = classifyGpsQuality(acc, ageMs);
+  els.gpsQuality.textContent = q.label;
+  els.gpsQuality.className = q.cls;
+  els.fixAge.textContent = lastFixTime ? `${Math.round(ageMs / 1000)} 秒前` : '—';
+  els.speed.textContent = Number.isFinite(speedMps) ? `${(speedMps * 3.6).toFixed(1)} km/h` : '—';
+  els.gpsExplain.textContent = q.text;
+  els.blackGps.textContent = `GPS：${q.label}${Number.isFinite(acc) ? ` ±${Math.round(acc)}m` : ''}`;
+  return q;
+}
+
+function startAgeTimer() {
+  if (ageTimer) clearInterval(ageTimer);
+  ageTimer = setInterval(() => {
+    if (!lastFixTime) return;
+    const ageMs = Date.now() - lastFixTime;
+    const accText = els.accuracy.textContent.replace(/[^0-9.]/g, '');
+    const acc = accText ? Number(accText) : NaN;
+    updateGpsPanel(acc, ageMs, NaN);
+    if (ageMs > 30000) setStatus('定位過舊', 'status-danger');
+  }, 5000);
 }
 
 function metersText(n) {
@@ -199,14 +249,16 @@ function evaluateDistance(d) {
   return { level: 'normal', text: '正常', cls: 'status-ok' };
 }
 
-function maybeAlert(state, d) {
+function maybeAlert(state, d, gpsQ = null) {
   const now = Date.now();
   const levelChanged = state.level !== lastAlertLevel;
   const repeatDue = now - lastAlertAt > 30000;
-  if (['warn', 'off', 'bad'].includes(state.level) && (levelChanged || repeatDue)) {
+  const canAlert = !gpsQ || gpsQ.allowLoudAlert || (gpsQ.level === 'ok' && state.level === 'bad');
+  if (['warn', 'off', 'bad'].includes(state.level) && canAlert && (levelChanged || repeatDue)) {
     lastAlertLevel = state.level;
     lastAlertAt = now;
-    const msg = `${state.text}，距離路線 ${Math.round(d)} 公尺`;
+    const gpsTail = gpsQ ? `，GPS ${gpsQ.label}` : '';
+    const msg = `${state.text}，距離路線 ${Math.round(d)} 公尺${gpsTail}`;
     playAlert(msg, state.level);
     log(`提醒：${msg}`);
   }
@@ -295,6 +347,7 @@ function startTracking() {
     log('此瀏覽器不支援 geolocation');
     return;
   }
+  startAgeTimer();
   watchId = navigator.geolocation.watchPosition(onPosition, onGeoError, {
     enableHighAccuracy: true,
     maximumAge: 1000,
@@ -312,6 +365,8 @@ function stopTracking() {
   els.startBtn.disabled = false;
   els.stopBtn.disabled = true;
   setStatus('已停止');
+  if (ageTimer) clearInterval(ageTimer);
+  ageTimer = null;
   log('停止定位');
 }
 
@@ -322,8 +377,11 @@ function onGeoError(err) {
 
 function onPosition(pos) {
   fixCount += 1;
+  lastFixTime = Date.now();
   currentPos = { lat: pos.coords.latitude, lon: pos.coords.longitude };
   const acc = pos.coords.accuracy;
+  const speedMps = pos.coords.speed;
+  const gpsQ = updateGpsPanel(acc, 0, speedMps);
   els.accuracy.textContent = `${Math.round(acc)} m`;
   els.fixCount.textContent = String(fixCount);
 
@@ -331,12 +389,18 @@ function onPosition(pos) {
   els.distance.textContent = metersText(d);
   els.blackDistance.textContent = `距離路線：${metersText(d)}`;
   const state = evaluateDistance(d);
-  setStatus(state.text, state.cls);
-  maybeAlert(state, d);
+  if (!gpsQ.reliable && route.length >= 2) {
+    setStatus('GPS 不可靠，暫不警報', 'status-danger');
+  } else if (gpsQ.level === 'ok' && ['warn', 'off', 'bad'].includes(state.level)) {
+    setStatus(`${state.text}，但 GPS 普通`, 'status-warn');
+  } else {
+    setStatus(state.text, state.cls);
+  }
+  maybeAlert(state, d, gpsQ);
   draw();
 
-  if (fixCount === 1) log(`首次定位：精度 ${Math.round(acc)} m`);
-  if (fixCount % 10 === 0) log(`定位 ${fixCount} 次，精度 ${Math.round(acc)} m，距離路線 ${metersText(d)}`);
+  if (fixCount === 1) log(`首次定位：GPS ${gpsQ.label}，精度 ${Math.round(acc)} m`);
+  if (fixCount % 10 === 0) log(`定位 ${fixCount} 次，GPS ${gpsQ.label}，精度 ${Math.round(acc)} m，距離路線 ${metersText(d)}`);
 }
 
 function routeBounds(points) {
@@ -406,7 +470,7 @@ els.gpxInput.addEventListener('change', async e => {
     draw();
   } catch (err) {
     log(`路線匯入失敗：${err.message}`);
-    alert(err.message);
+    alert(`${err.message}\n\n若你剛剛已經上傳新版，這個錯誤仍顯示 GPX 而不是 KML，通常是 iPhone 還在跑舊版快取。請刪除主畫面圖示後重新加入，或等 GitHub Pages 更新。`);
   }
 });
 
@@ -462,4 +526,4 @@ if ('serviceWorker' in navigator) {
 }
 
 draw();
-log('請先匯入 GPX / KML，然後按「開始定位」與「啟用 Wake Lock」。');
+log('v4 GPS 診斷版：請先匯入 GPX / KML，然後按「開始定位」與「啟用 Wake Lock」。');

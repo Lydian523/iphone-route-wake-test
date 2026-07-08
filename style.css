@@ -27,6 +27,7 @@ body {
 
 h1, h2 { margin: 0 0 10px; }
 h1 { font-size: 24px; }
+.version { display:inline-block; font-size: 13px; color: var(--muted); font-weight: 500; margin-left: 6px; }
 h2 { font-size: 18px; }
 button, .file-btn, select, input {
   font: inherit;
@@ -68,6 +69,8 @@ button:disabled { opacity: .45; }
   margin-bottom: 8px;
 }
 .card strong { font-size: 22px; }
+.gps-note p { line-height: 1.6; }
+#gpsExplain { margin: 0; color: #ddd; }
 #routeCanvas {
   width: 100%;
   height: auto;
@@ -124,6 +127,7 @@ pre {
 .status-ok { color: var(--ok); }
 .status-warn { color: var(--warn); }
 .status-danger { color: var(--danger); }
+.status-muted { color: var(--muted); }
 @media (min-width: 760px) {
   body { max-width: 860px; margin: 0 auto; }
   .grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
