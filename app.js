@@ -53,9 +53,16 @@ let ageTimer = null;
 let offRouteActive = false;
 let lastNonNormalLevel = 'normal';
 let lastRouteName = '';
+let trackingActive = false;
+let firstFixAfterStart = false;
+let wakeRetryTimer = null;
+let wakeRetryCount = 0;
+let manualWakeStop = false;
 
-const STORAGE_ROUTE_KEY = 'routeWakeTest.savedRoute.v8';
-const STORAGE_SETTINGS_KEY = 'routeWakeTest.settings.v8';
+const STORAGE_ROUTE_KEY = 'routeWakeTest.savedRoute';
+const STORAGE_ROUTE_FALLBACK_KEYS = ['routeWakeTest.savedRoute.v8', 'routeWakeTest.savedRoute.v7', 'routeWakeTest.savedRoute.v6'];
+const STORAGE_SETTINGS_KEY = 'routeWakeTest.settings';
+const STORAGE_SETTINGS_FALLBACK_KEYS = ['routeWakeTest.settings.v8', 'routeWakeTest.settings.v7', 'routeWakeTest.settings.v6'];
 
 const ctx = els.canvas.getContext('2d');
 
@@ -68,6 +75,11 @@ function setStatus(text, cls = '') {
   els.status.textContent = text;
   els.status.className = cls;
   els.blackStatus.textContent = text;
+}
+
+function setWakeStatus(text, needTap = false) {
+  els.wakeStatus.textContent = text;
+  els.wakeBtn.classList.toggle('need-tap', needTap);
 }
 
 
@@ -126,7 +138,13 @@ function saveSettings() {
 
 function loadSettings() {
   try {
-    const raw = localStorage.getItem(STORAGE_SETTINGS_KEY);
+    let raw = localStorage.getItem(STORAGE_SETTINGS_KEY);
+    if (!raw) {
+      for (const key of STORAGE_SETTINGS_FALLBACK_KEYS) {
+        raw = localStorage.getItem(key);
+        if (raw) break;
+      }
+    }
     if (!raw) return;
     const data = JSON.parse(raw);
     if (data.warnM) els.warnM.value = data.warnM;
@@ -140,7 +158,7 @@ function loadSettings() {
 
 function saveRouteToStorage(name, points) {
   const payload = {
-    version: 8,
+    version: 9,
     savedAt: Date.now(),
     name,
     points,
@@ -150,7 +168,13 @@ function saveRouteToStorage(name, points) {
 
 function loadRouteFromStorage() {
   try {
-    const raw = localStorage.getItem(STORAGE_ROUTE_KEY);
+    let raw = localStorage.getItem(STORAGE_ROUTE_KEY);
+    if (!raw) {
+      for (const key of STORAGE_ROUTE_FALLBACK_KEYS) {
+        raw = localStorage.getItem(key);
+        if (raw) break;
+      }
+    }
     if (!raw) return false;
     const data = JSON.parse(raw);
     if (!data || !Array.isArray(data.points) || data.points.length < 2) return false;
@@ -495,45 +519,95 @@ function playAlert(text, level = 'warn') {
   }
 }
 
-async function requestWakeLock() {
+async function requestWakeLock(reason = 'manual') {
   if (!('wakeLock' in navigator)) {
-    els.wakeStatus.textContent = '不支援';
+    setWakeStatus('不支援', false);
     log('此瀏覽器不支援 Screen Wake Lock');
-    return;
+    return false;
+  }
+  if (document.visibilityState !== 'visible') {
+    setWakeStatus('等待前景', true);
+    log(`Wake Lock 延後：頁面目前不是前景（${reason}）`);
+    return false;
+  }
+  if (wakeLock) {
+    setWakeStatus('已啟用', false);
+    return true;
   }
   try {
-    wakeLock = await navigator.wakeLock.request('screen');
-    els.wakeStatus.textContent = '已啟用';
-    log('Wake Lock 已啟用');
-    wakeLock.addEventListener('release', () => {
-      els.wakeStatus.textContent = '已釋放';
+    manualWakeStop = false;
+    const lock = await navigator.wakeLock.request('screen');
+    wakeLock = lock;
+    setWakeStatus('已啟用', false);
+    log(`Wake Lock 已啟用（${reason}）`);
+    lock.addEventListener('release', () => {
+      if (wakeLock === lock) wakeLock = null;
+      setWakeStatus(trackingActive ? '已釋放，待重試' : '已釋放', trackingActive);
       log('Wake Lock 已釋放');
-    });
+      if (trackingActive && !manualWakeStop) scheduleWakeRetry('release 後重試', 700);
+    }, { once: true });
+    return true;
   } catch (err) {
-    els.wakeStatus.textContent = '失敗';
-    log(`Wake Lock 啟用失敗：${err.name} ${err.message}`);
+    setWakeStatus('失敗，請點一下', true);
+    log(`Wake Lock 啟用失敗（${reason}）：${err.name} ${err.message}`);
+    return false;
   }
+}
+
+function scheduleWakeRetry(reason = 'retry', delayMs = 1000) {
+  if (!trackingActive) return;
+  if (wakeLock) return;
+  clearTimeout(wakeRetryTimer);
+  wakeRetryTimer = setTimeout(async () => {
+    if (!trackingActive || wakeLock) return;
+    wakeRetryCount += 1;
+    const ok = await requestWakeLock(`${reason} #${wakeRetryCount}`);
+    if (!ok && trackingActive && wakeRetryCount < 6) {
+      const nextDelay = Math.min(6000, 800 + wakeRetryCount * 1200);
+      scheduleWakeRetry(reason, nextDelay);
+    }
+  }, delayMs);
 }
 
 async function releaseWakeLock() {
+  manualWakeStop = true;
+  clearTimeout(wakeRetryTimer);
+  wakeRetryTimer = null;
+  wakeRetryCount = 0;
   if (wakeLock) {
-    await wakeLock.release().catch(() => {});
+    const lock = wakeLock;
     wakeLock = null;
+    await lock.release().catch(() => {});
   }
+  setWakeStatus('未啟用', false);
 }
 
-document.addEventListener('visibilitychange', async () => {
-  if (document.visibilityState === 'visible' && els.wakeStatus.textContent !== '未啟用') {
-    await requestWakeLock();
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && trackingActive && !wakeLock) {
+    scheduleWakeRetry('回到前景', 700);
   }
 });
 
-async function startTracking() {
-  await requestWakeLock();
+async function startTracking(options = {}) {
+  const auto = Boolean(options.auto);
   if (!('geolocation' in navigator)) {
     log('此瀏覽器不支援 geolocation');
     return;
   }
+
+  trackingActive = true;
+  firstFixAfterStart = false;
+  wakeRetryCount = 0;
+  manualWakeStop = false;
+
+  if (!auto) {
+    // 手動按鈕本身是使用者互動，先搶 Wake Lock；這是目前實測最穩的路徑。
+    await requestWakeLock('手動開始');
+  } else {
+    // 捷徑 autostart 可能會撞上 iOS 定位權限框；先不要搶 Wake Lock。
+    setWakeStatus('等第一次 GPS', false);
+  }
+
   startAgeTimer();
   watchId = navigator.geolocation.watchPosition(onPosition, onGeoError, {
     enableHighAccuracy: true,
@@ -543,10 +617,12 @@ async function startTracking() {
   els.startBtn.disabled = true;
   els.stopBtn.disabled = false;
   setStatus('等待 GPS');
-  log('開始定位，已自動嘗試啟用 Wake Lock');
+  log(auto ? '捷徑啟動：先開始定位，等第一次 GPS 成功後再啟用 Wake Lock' : '開始定位，已嘗試啟用 Wake Lock');
 }
 
-function stopTracking() {
+async function stopTracking() {
+  trackingActive = false;
+  firstFixAfterStart = false;
   if (watchId != null) navigator.geolocation.clearWatch(watchId);
   watchId = null;
   els.startBtn.disabled = false;
@@ -554,7 +630,8 @@ function stopTracking() {
   setStatus('已停止');
   if (ageTimer) clearInterval(ageTimer);
   ageTimer = null;
-  log('停止定位');
+  await releaseWakeLock();
+  log('停止定位，已釋放 Wake Lock');
 }
 
 function onGeoError(err) {
@@ -577,6 +654,10 @@ function onPosition(pos) {
   const gpsQ = updateGpsPanel(acc, 0, speedMps);
   els.accuracy.textContent = `${Math.round(acc)} m`;
   els.fixCount.textContent = String(fixCount);
+  if (trackingActive && !firstFixAfterStart) {
+    firstFixAfterStart = true;
+    scheduleWakeRetry('第一次 GPS 成功後', 1200);
+  }
 
   const info = route.length >= 2 ? nearestRouteInfo(currentPos, route) : { distance: Infinity };
   const d = info.distance;
@@ -671,9 +752,9 @@ els.gpxInput.addEventListener('change', async e => {
   }
 });
 
-els.startBtn.addEventListener('click', startTracking);
-els.stopBtn.addEventListener('click', stopTracking);
-els.wakeBtn.addEventListener('click', requestWakeLock);
+els.startBtn.addEventListener('click', () => startTracking({ auto: false }));
+els.stopBtn.addEventListener('click', () => stopTracking());
+els.wakeBtn.addEventListener('click', () => requestWakeLock('手動補按'));
 els.blackBtn.addEventListener('click', () => {
   els.blackScreen.classList.remove('hidden');
 });
@@ -732,7 +813,7 @@ async function autoStartFromUrl() {
   log('偵測到 URL 參數 autostart=1，嘗試自動開始定位。');
   if (watchId != null) return;
   try {
-    await startTracking();
+    await startTracking({ auto: true });
   } catch (err) {
     log(`自動開始定位失敗：${err.message}。若 iOS 要求使用者互動，請按一次「開始定位」。`);
     setStatus('請手動開始定位', 'status-warn');
@@ -750,5 +831,5 @@ if ('serviceWorker' in navigator) {
 loadSettings();
 const restored = loadRouteFromStorage();
 if (!restored) draw();
-log('v8 捷徑啟動版：支援 ?autostart=1；移除 PWA 內呼叫捷徑亮度功能；開始定位自動 Wake Lock。');
+log('v9 捷徑穩定版：手動開始先啟用 Wake Lock；捷徑 autostart 等第一次 GPS 後再重試 Wake Lock；停止會釋放 Wake Lock。');
 setTimeout(autoStartFromUrl, 300);

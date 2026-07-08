@@ -1,4 +1,4 @@
-# 路線偏離測試器 v8 捷徑啟動版
+# 路線偏離測試器 v9 捷徑啟動版
 
 ## 新增重點
 
@@ -21,3 +21,12 @@ https://lydian523.github.io/iphone-route-wake-test/index.html?autostart=1
 ```
 
 注意：iOS 仍可能要求定位權限、聲音權限或一次使用者互動。若自動開始失敗，畫面會提示手動按「開始定位」。
+
+
+## v9 重點
+
+- 捷徑 autostart 啟動時，先啟動定位，不立刻搶 Wake Lock。
+- 第一次 GPS 成功後，延遲並重試 Wake Lock。
+- 回到前景時若仍在定位，會重新嘗試 Wake Lock。
+- 停止定位時會主動釋放 Wake Lock。
+- Wake Lock 失敗時顯示「點一下啟用 Wake Lock」。

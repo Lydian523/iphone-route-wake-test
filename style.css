@@ -133,3 +133,5 @@ pre {
   .grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .thresholds { grid-template-columns: repeat(3, 1fr); }
 }
+
+#wakeBtn.need-tap { border-color: var(--warn); box-shadow: 0 0 0 2px rgba(255, 209, 102, .25); }
