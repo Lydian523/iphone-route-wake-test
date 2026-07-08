@@ -2,7 +2,7 @@
   "name": "路線偏離測試器",
   "short_name": "偏離測試",
   "start_url": "./index.html",
-  "display": "standalone",
+  "display": "fullscreen",
   "background_color": "#000000",
   "theme_color": "#000000",
   "orientation": "portrait",

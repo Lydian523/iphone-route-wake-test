@@ -12,6 +12,11 @@
 }
 
 * { box-sizing: border-box; }
+html, body {
+  width: 100%;
+  min-height: 100%;
+  background: #000;
+}
 body {
   margin: 0;
   padding: env(safe-area-inset-top) 12px env(safe-area-inset-bottom);
@@ -90,10 +95,16 @@ pre {
 .hidden { display: none !important; }
 #blackScreen {
   position: fixed;
-  inset: 0;
+  left: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 100vw;
+  height: 100vh;
+  height: 100dvh;
   background: #000;
   color: #fff;
-  z-index: 9999;
+  z-index: 2147483647;
   touch-action: none;
   user-select: none;
   display: flex;
@@ -101,7 +112,7 @@ pre {
   justify-content: center;
   text-align: center;
 }
-.black-info { opacity: .28; font-size: 18px; line-height: 1.8; }
+.black-info { opacity: .18; font-size: 16px; line-height: 1.8; padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom); }
 .unlock-note { font-size: 13px; color: #bbb; margin-top: 20px; }
 #holdRing {
   margin: 14px auto 0;
