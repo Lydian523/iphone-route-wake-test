@@ -29,6 +29,7 @@ const els = {
   blackStatus: document.getElementById('blackStatus'),
   blackDistance: document.getElementById('blackDistance'),
   blackGuidance: document.getElementById('blackGuidance'),
+  blackWake: document.getElementById('blackWake'),
   holdRing: document.getElementById('holdRing'),
   copyLogBtn: document.getElementById('copyLogBtn'),
   clearLogBtn: document.getElementById('clearLogBtn'),
@@ -58,6 +59,7 @@ let firstFixAfterStart = false;
 let wakeRetryTimer = null;
 let wakeRetryCount = 0;
 let manualWakeStop = false;
+let tapWakeArmed = false;
 
 const STORAGE_ROUTE_KEY = 'routeWakeTest.savedRoute';
 const STORAGE_ROUTE_FALLBACK_KEYS = ['routeWakeTest.savedRoute.v8', 'routeWakeTest.savedRoute.v7', 'routeWakeTest.savedRoute.v6'];
@@ -79,7 +81,9 @@ function setStatus(text, cls = '') {
 
 function setWakeStatus(text, needTap = false) {
   els.wakeStatus.textContent = text;
+  els.wakeStatus.classList.toggle('wake-need-tap', needTap);
   els.wakeBtn.classList.toggle('need-tap', needTap);
+  if (els.blackWake) els.blackWake.textContent = `Wake Lock：${text}`;
 }
 
 
@@ -158,7 +162,7 @@ function loadSettings() {
 
 function saveRouteToStorage(name, points) {
   const payload = {
-    version: 9,
+    version: 10,
     savedAt: Date.now(),
     name,
     points,
@@ -562,11 +566,50 @@ function scheduleWakeRetry(reason = 'retry', delayMs = 1000) {
     if (!trackingActive || wakeLock) return;
     wakeRetryCount += 1;
     const ok = await requestWakeLock(`${reason} #${wakeRetryCount}`);
-    if (!ok && trackingActive && wakeRetryCount < 6) {
-      const nextDelay = Math.min(6000, 800 + wakeRetryCount * 1200);
-      scheduleWakeRetry(reason, nextDelay);
+    if (!ok && trackingActive) {
+      if (wakeRetryCount < 3) {
+        const nextDelay = Math.min(6000, 800 + wakeRetryCount * 1200);
+        scheduleWakeRetry(reason, nextDelay);
+      } else {
+        // iOS 沒有使用者手勢時會一直拒絕，重試沒有意義，改等使用者觸碰。
+        armTapForWakeLock(reason);
+      }
     }
   }, delayMs);
+}
+
+// iOS WebKit 只在真實使用者手勢裡放行 Wake Lock。
+// 掛一個一次性的全域 pointerdown 監聽器：使用者點螢幕任何地方那一下就順手搶。
+function armTapForWakeLock(reason = '首次觸碰') {
+  if (tapWakeArmed || wakeLock || !trackingActive) return;
+  if (!('wakeLock' in navigator)) return;
+  tapWakeArmed = true;
+  const handler = () => {
+    tapWakeArmed = false;
+    document.removeEventListener('pointerdown', handler, true);
+    if (!trackingActive || wakeLock) return;
+    // 不可以在 request 前 await 任何東西，否則會失去手勢的 transient activation。
+    requestWakeLock(`${reason}｜使用者手勢`).then(ok => {
+      // 仍失敗（例如低耗電模式）就再掛回去，等下一次觸碰。
+      if (!ok && trackingActive && !wakeLock) armTapForWakeLock(reason);
+    });
+  };
+  document.addEventListener('pointerdown', handler, true);
+  setWakeStatus('點一下螢幕啟用', true);
+  log('等待使用者手勢：點一下螢幕任意位置即可啟用 Wake Lock。');
+}
+
+function disarmTapForWakeLock() {
+  tapWakeArmed = false;
+}
+
+// autostart 的第一次 GPS 成功後：先試一次（Android / 桌面通常放行），
+// iOS 被拒就直接轉入「等一次觸碰」模式，不再空跑重試。
+async function attemptAutoWakeLock() {
+  const ok = await requestWakeLock('第一次 GPS 成功後');
+  if (!ok && trackingActive && !wakeLock) {
+    armTapForWakeLock('autostart 後');
+  }
 }
 
 async function releaseWakeLock() {
@@ -574,6 +617,7 @@ async function releaseWakeLock() {
   clearTimeout(wakeRetryTimer);
   wakeRetryTimer = null;
   wakeRetryCount = 0;
+  disarmTapForWakeLock();
   if (wakeLock) {
     const lock = wakeLock;
     wakeLock = null;
@@ -656,7 +700,7 @@ function onPosition(pos) {
   els.fixCount.textContent = String(fixCount);
   if (trackingActive && !firstFixAfterStart) {
     firstFixAfterStart = true;
-    scheduleWakeRetry('第一次 GPS 成功後', 1200);
+    if (!wakeLock) setTimeout(attemptAutoWakeLock, 500);
   }
 
   const info = route.length >= 2 ? nearestRouteInfo(currentPos, route) : { distance: Infinity };
@@ -756,6 +800,8 @@ els.startBtn.addEventListener('click', () => startTracking({ auto: false }));
 els.stopBtn.addEventListener('click', () => stopTracking());
 els.wakeBtn.addEventListener('click', () => requestWakeLock('手動補按'));
 els.blackBtn.addEventListener('click', () => {
+  // 這一下點擊本身就是使用者手勢，順手把 Wake Lock 帶起來。
+  if (trackingActive && !wakeLock) requestWakeLock('黑畫面按鈕');
   els.blackScreen.classList.remove('hidden');
 });
 els.testSoundBtn.addEventListener('click', () => playAlert('偏移，往回，佳', 'off'));
@@ -771,6 +817,8 @@ els.clearRouteBtn.addEventListener('click', clearSavedRoute);
 });
 
 function beginHold() {
+  // 黑畫面裡的任何觸碰（包含誤觸）都是手勢，Wake Lock 掉了就順手補回來。
+  if (trackingActive && !wakeLock) requestWakeLock('黑畫面觸碰');
   holdStart = Date.now();
   els.holdRing.style.borderColor = '#fff';
   holdTimer = setTimeout(() => {
@@ -831,5 +879,5 @@ if ('serviceWorker' in navigator) {
 loadSettings();
 const restored = loadRouteFromStorage();
 if (!restored) draw();
-log('v9 捷徑穩定版：手動開始先啟用 Wake Lock；捷徑 autostart 等第一次 GPS 後再重試 Wake Lock；停止會釋放 Wake Lock。');
+log('v10 手勢版：iOS 只在使用者手勢中放行 Wake Lock；autostart 失敗後點一下螢幕任意位置即可啟用；黑畫面按鈕與黑畫面觸碰都會順手補搶。');
 setTimeout(autoStartFromUrl, 300);

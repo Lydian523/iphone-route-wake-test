@@ -6,15 +6,15 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="theme-color" content="#000000" />
-  <title>路線偏離測試器 v9</title>
+  <title>路線偏離測試器 v10</title>
   <link rel="manifest" href="manifest.webmanifest" />
-  <link rel="stylesheet" href="style.css?v=9" />
+  <link rel="stylesheet" href="style.css?v=10" />
 </head>
 <body>
   <main id="app">
     <section class="panel top-panel">
-      <h1>路線偏離測試器 <span class="version">v9 捷徑穩定版</span></h1>
-      <p class="hint">iPhone 11 Pro 實測用：GPX / KML 匯入、捷徑 URL 快速啟動、延後 Wake Lock、停止自動釋放、GPS 距離路線、簡短偏移語音、黑畫面口袋模式。</p>
+      <h1>路線偏離測試器 <span class="version">v10 手勢版</span></h1>
+      <p class="hint">iPhone 11 Pro 實測用：GPX / KML 匯入、捷徑 URL 快速啟動、Wake Lock 手勢啟用（點一下螢幕）、停止自動釋放、GPS 距離路線、簡短偏移語音、黑畫面口袋模式。</p>
 
       <div class="row">
         <label class="file-btn">
@@ -93,11 +93,12 @@
       <div id="blackStatus">定位中</div>
       <div id="blackDistance">距離路線：—</div>
       <div id="blackGuidance">提示：—</div>
+      <div id="blackWake">Wake Lock：—</div>
       <div class="unlock-note">長按 3 秒離開黑畫面</div>
       <div id="holdRing"></div>
     </div>
   </div>
 
-  <script src="app.js?v=9"></script>
+  <script src="app.js?v=10"></script>
 </body>
 </html>

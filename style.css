@@ -135,3 +135,11 @@ pre {
 }
 
 #wakeBtn.need-tap { border-color: var(--warn); box-shadow: 0 0 0 2px rgba(255, 209, 102, .25); }
+
+#wakeStatus.wake-need-tap {
+  color: var(--warn);
+  animation: wakeBlink 1.1s ease-in-out infinite;
+}
+@keyframes wakeBlink {
+  50% { opacity: .3; }
+}

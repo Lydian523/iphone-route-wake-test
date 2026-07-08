@@ -1,4 +1,4 @@
-const CACHE_NAME = 'route-wake-test-v9';
+const CACHE_NAME = 'route-wake-test-v10';
 const ASSETS = [
   './',
   './index.html',
