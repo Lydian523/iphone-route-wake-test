@@ -33,6 +33,8 @@ const els = {
   copyLogBtn: document.getElementById('copyLogBtn'),
   clearLogBtn: document.getElementById('clearLogBtn'),
   clearRouteBtn: document.getElementById('clearRouteBtn'),
+  dimShortcutBtn: document.getElementById('dimShortcutBtn'),
+  brightShortcutBtn: document.getElementById('brightShortcutBtn'),
 };
 
 let route = [];
@@ -54,8 +56,10 @@ let offRouteActive = false;
 let lastNonNormalLevel = 'normal';
 let lastRouteName = '';
 
-const STORAGE_ROUTE_KEY = 'routeWakeTest.savedRoute.v6';
-const STORAGE_SETTINGS_KEY = 'routeWakeTest.settings.v6';
+const STORAGE_ROUTE_KEY = 'routeWakeTest.savedRoute.v7';
+const STORAGE_SETTINGS_KEY = 'routeWakeTest.settings.v7';
+const DIM_SHORTCUT_NAME = '路線測試螢幕最暗';
+const BRIGHT_SHORTCUT_NAME = '路線測試螢幕最亮';
 
 const ctx = els.canvas.getContext('2d');
 
@@ -73,10 +77,10 @@ function setStatus(text, cls = '') {
 
 function classifyGpsQuality(acc, ageMs) {
   if (!Number.isFinite(acc)) {
-    return { level: 'unknown', label: '未知', cls: 'status-muted', reliable: false, allowLoudAlert: false, text: 'GPS 尚未回報精度，偏離判斷暫不可靠。' };
+    return { level: 'unknown', label: '未知', cls: 'status-muted', reliable: false, allowLoudAlert: false, text: 'GPS 尚未回報精度，偏離判斷需搭配 GPS 品質判讀。' };
   }
   if (ageMs > 30000) {
-    return { level: 'stale', label: '過舊', cls: 'status-danger', reliable: false, allowLoudAlert: false, text: `定位已經 ${Math.round(ageMs / 1000)} 秒沒有更新，暫停偏離警報。` };
+    return { level: 'stale', label: '過舊', cls: 'status-danger', reliable: false, allowLoudAlert: false, text: `定位已經 ${Math.round(ageMs / 1000)} 秒沒有更新；仍可測試，但警報可信度很低。` };
   }
   if (acc <= 15) {
     return { level: 'good', label: '良好', cls: 'status-ok', reliable: true, allowLoudAlert: true, text: `GPS 良好，精度約 ±${Math.round(acc)} 公尺，可正常判斷偏離。` };
@@ -85,9 +89,9 @@ function classifyGpsQuality(acc, ageMs) {
     return { level: 'ok', label: '普通', cls: 'status-warn', reliable: true, allowLoudAlert: false, text: `GPS 普通，精度約 ±${Math.round(acc)} 公尺；偏離提醒僅供參考。` };
   }
   if (acc <= 80) {
-    return { level: 'poor', label: '差', cls: 'status-danger', reliable: false, allowLoudAlert: false, text: `GPS 偏差大，精度約 ±${Math.round(acc)} 公尺；可能誤報，暫停大聲偏離警報。` };
+    return { level: 'poor', label: '差', cls: 'status-danger', reliable: false, allowLoudAlert: false, text: `GPS 偏差大，精度約 ±${Math.round(acc)} 公尺；可能誤報；仍會提醒，但語音會標示品質不佳。` };
   }
-  return { level: 'bad', label: '很差', cls: 'status-danger', reliable: false, allowLoudAlert: false, text: `GPS 很差，精度約 ±${Math.round(acc)} 公尺；停止偏離判斷，先到開闊處再測。` };
+  return { level: 'bad', label: '很差', cls: 'status-danger', reliable: false, allowLoudAlert: false, text: `GPS 很差，精度約 ±${Math.round(acc)} 公尺；嚴重誤差；仍會提醒，但只適合確認 PWA 是否還在運作。` };
 }
 
 function updateGpsPanel(acc, ageMs, speedMps) {
@@ -140,7 +144,7 @@ function loadSettings() {
 
 function saveRouteToStorage(name, points) {
   const payload = {
-    version: 6,
+    version: 7,
     savedAt: Date.now(),
     name,
     points,
@@ -352,9 +356,8 @@ function relativeDirectionText(targetBearing, heading) {
 
 function buildReturnGuidance(info, state, gpsQ) {
   if (!info || !Number.isFinite(info.distance)) return '尚未取得路線距離。';
-  if (!gpsQ || !gpsQ.reliable) return 'GPS 品質不足，暫不提供方向提示。';
-
   const heading = lastHeadingDeg;
+
   const routeDir = Number.isFinite(info.routeBearing) ? info.routeBearing : NaN;
   const toRouteDir = info.point ? bearingDeg(currentPos, info.point) : NaN;
   const routeDistance = Math.round(info.distance);
@@ -391,22 +394,46 @@ function evaluateDistance(d) {
   return { level: 'normal', text: '正常', cls: 'status-ok' };
 }
 
+function gpsSpeechTail(gpsQ) {
+  if (!gpsQ) return '未知';
+  if (gpsQ.level === 'good') return '佳';
+  if (gpsQ.level === 'ok' || gpsQ.level === 'poor') return '不佳';
+  return '嚴重誤差';
+}
+
+function shortDirectionFromGuidance(guidance) {
+  if (!guidance) return '確認方向';
+  if (guidance.includes('右方') || guidance.includes('往右')) return '往右回走';
+  if (guidance.includes('左方') || guidance.includes('往左')) return '往左回走';
+  if (guidance.includes('後方') || guidance.includes('走過頭') || guidance.includes('往回')) return '往回';
+  if (guidance.includes('前方')) return '往前';
+  if (guidance.includes('走反')) return '往回';
+  return '確認方向';
+}
+
+function buildShortVoice(state, gpsQ, guidance) {
+  const gpsTail = gpsSpeechTail(gpsQ);
+  if (state.level === 'normal') return `回到路線，${gpsTail}`;
+  const dir = shortDirectionFromGuidance(guidance);
+  if (state.level === 'bad') return `嚴重偏移，${dir}，${gpsTail}`;
+  return `偏移，${dir}，${gpsTail}`;
+}
+
 function maybeAlert(state, d, gpsQ = null, guidance = '') {
   const now = Date.now();
   const wasOffRoute = offRouteActive;
   const isOffRoute = ['warn', 'off', 'bad'].includes(state.level);
   const isBackOnRoute = wasOffRoute && state.level === 'normal';
   const levelChanged = state.level !== lastAlertLevel;
-  const repeatDue = now - lastAlertAt > 30000;
-  const canAlert = !gpsQ || gpsQ.allowLoudAlert || (gpsQ.level === 'ok' && state.level === 'bad');
+  const repeatDue = now - lastAlertAt > 20000;
 
   if (isBackOnRoute) {
     offRouteActive = false;
     lastAlertLevel = 'normal';
     lastAlertAt = now;
-    const msg = `已回到正確路徑，距離路線 ${Math.round(d)} 公尺`;
+    const msg = buildShortVoice(state, gpsQ, guidance);
     playAlert(msg, 'normal');
-    log(`返回提醒：${msg}`);
+    log(`返回提醒：${msg}，距離路線 ${Math.round(d)} 公尺`);
     return;
   }
 
@@ -415,13 +442,14 @@ function maybeAlert(state, d, gpsQ = null, guidance = '') {
     lastNonNormalLevel = state.level;
   }
 
-  if (isOffRoute && canAlert && (levelChanged || repeatDue)) {
+  // v7 測試策略：不再因 GPS 品質差而停止偏離警告。
+  // GPS 品質只進入語音尾巴：佳 / 不佳 / 嚴重誤差。
+  if (isOffRoute && (levelChanged || repeatDue)) {
     lastAlertLevel = state.level;
     lastAlertAt = now;
-    const gpsTail = gpsQ ? `，GPS ${gpsQ.label}` : '';
-    const msg = `${state.text}，距離路線 ${Math.round(d)} 公尺${gpsTail}。${guidance || ''}`;
+    const msg = buildShortVoice(state, gpsQ, guidance);
     playAlert(msg, state.level);
-    log(`提醒：${msg}`);
+    log(`提醒：${msg}，距離路線 ${Math.round(d)} 公尺，GPS ${gpsQ ? gpsQ.label : '未知'}，${guidance || ''}`);
   }
 
   if (state.level === 'normal') lastAlertLevel = 'normal';
@@ -498,13 +526,23 @@ async function releaseWakeLock() {
   }
 }
 
+function shortcutRunUrl(name) {
+  return `shortcuts://run-shortcut?name=${encodeURIComponent(name)}`;
+}
+
+function runShortcut(name) {
+  // iOS 會離開 PWA 到「捷徑」App 執行；這是系統限制。
+  window.location.href = shortcutRunUrl(name);
+}
+
 document.addEventListener('visibilitychange', async () => {
   if (document.visibilityState === 'visible' && els.wakeStatus.textContent !== '未啟用') {
     await requestWakeLock();
   }
 });
 
-function startTracking() {
+async function startTracking() {
+  await requestWakeLock();
   if (!('geolocation' in navigator)) {
     log('此瀏覽器不支援 geolocation');
     return;
@@ -518,7 +556,7 @@ function startTracking() {
   els.startBtn.disabled = true;
   els.stopBtn.disabled = false;
   setStatus('等待 GPS');
-  log('開始定位');
+  log('開始定位，已自動嘗試啟用 Wake Lock');
 }
 
 function stopTracking() {
@@ -561,12 +599,10 @@ function onPosition(pos) {
   const guidance = route.length >= 2 ? buildReturnGuidance(info, state, gpsQ) : '尚未匯入路線。';
   els.guidance.textContent = guidance;
   els.blackGuidance.textContent = `提示：${guidance}`;
-  if (!gpsQ.reliable && route.length >= 2) {
-    setStatus('GPS 不可靠，暫不警報', 'status-danger');
-  } else if (gpsQ.level === 'ok' && ['warn', 'off', 'bad'].includes(state.level)) {
-    setStatus(`${state.text}，但 GPS 普通`, 'status-warn');
+  if (['warn', 'off', 'bad'].includes(state.level)) {
+    setStatus(`${state.text}，GPS ${gpsQ.label}`, state.cls || gpsQ.cls);
   } else {
-    setStatus(state.text, state.cls);
+    setStatus(`${state.text}，GPS ${gpsQ.label}`, state.cls || gpsQ.cls);
   }
   maybeAlert(state, d, gpsQ, guidance);
   draw();
@@ -651,8 +687,13 @@ els.gpxInput.addEventListener('change', async e => {
 els.startBtn.addEventListener('click', startTracking);
 els.stopBtn.addEventListener('click', stopTracking);
 els.wakeBtn.addEventListener('click', requestWakeLock);
-els.blackBtn.addEventListener('click', () => els.blackScreen.classList.remove('hidden'));
-els.testSoundBtn.addEventListener('click', () => playAlert('聲音測試，請確認口袋或耳機聽得到', 'off'));
+els.blackBtn.addEventListener('click', () => {
+  els.blackScreen.classList.remove('hidden');
+  runShortcut(DIM_SHORTCUT_NAME);
+});
+els.testSoundBtn.addEventListener('click', () => playAlert('偏移，往回，佳', 'off'));
+els.dimShortcutBtn.addEventListener('click', () => runShortcut(DIM_SHORTCUT_NAME));
+els.brightShortcutBtn.addEventListener('click', () => runShortcut(BRIGHT_SHORTCUT_NAME));
 els.copyLogBtn.addEventListener('click', async () => {
   await navigator.clipboard.writeText(els.log.textContent).catch(() => {});
   log('已嘗試複製紀錄');
@@ -670,6 +711,7 @@ function beginHold() {
   holdTimer = setTimeout(() => {
     endHold(true);
     els.blackScreen.classList.add('hidden');
+    runShortcut(BRIGHT_SHORTCUT_NAME);
   }, 3000);
   const tick = () => {
     const pct = Math.min(1, (Date.now() - holdStart) / 3000);
@@ -707,4 +749,4 @@ if ('serviceWorker' in navigator) {
 loadSettings();
 const restored = loadRouteFromStorage();
 if (!restored) draw();
-log('v6 返回提示版：路線自動保存，返回正確路徑會提醒，偏離時提供回到路線方向提示。');
+log('v7 口袋測試版：開始定位自動 Wake Lock；GPS 品質不再阻擋偏離警告；語音改短句；支援捷徑亮度按鈕。');

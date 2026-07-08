@@ -1,6 +1,6 @@
 {
-  "name": "路線偏離測試器",
-  "short_name": "偏離測試",
+  "name": "路線偏離v7器 v7",
+  "short_name": "偏離v7",
   "start_url": "./index.html",
   "display": "fullscreen",
   "background_color": "#000000",
