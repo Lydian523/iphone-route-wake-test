@@ -33,9 +33,7 @@ const els = {
   copyLogBtn: document.getElementById('copyLogBtn'),
   clearLogBtn: document.getElementById('clearLogBtn'),
   clearRouteBtn: document.getElementById('clearRouteBtn'),
-  dimShortcutBtn: document.getElementById('dimShortcutBtn'),
-  brightShortcutBtn: document.getElementById('brightShortcutBtn'),
-};
+  };
 
 let route = [];
 let currentPos = null;
@@ -56,10 +54,8 @@ let offRouteActive = false;
 let lastNonNormalLevel = 'normal';
 let lastRouteName = '';
 
-const STORAGE_ROUTE_KEY = 'routeWakeTest.savedRoute.v7';
-const STORAGE_SETTINGS_KEY = 'routeWakeTest.settings.v7';
-const DIM_SHORTCUT_NAME = '路線測試螢幕最暗';
-const BRIGHT_SHORTCUT_NAME = '路線測試螢幕最亮';
+const STORAGE_ROUTE_KEY = 'routeWakeTest.savedRoute.v8';
+const STORAGE_SETTINGS_KEY = 'routeWakeTest.settings.v8';
 
 const ctx = els.canvas.getContext('2d');
 
@@ -144,7 +140,7 @@ function loadSettings() {
 
 function saveRouteToStorage(name, points) {
   const payload = {
-    version: 7,
+    version: 8,
     savedAt: Date.now(),
     name,
     points,
@@ -526,15 +522,6 @@ async function releaseWakeLock() {
   }
 }
 
-function shortcutRunUrl(name) {
-  return `shortcuts://run-shortcut?name=${encodeURIComponent(name)}`;
-}
-
-function runShortcut(name) {
-  // iOS 會離開 PWA 到「捷徑」App 執行；這是系統限制。
-  window.location.href = shortcutRunUrl(name);
-}
-
 document.addEventListener('visibilitychange', async () => {
   if (document.visibilityState === 'visible' && els.wakeStatus.textContent !== '未啟用') {
     await requestWakeLock();
@@ -689,11 +676,8 @@ els.stopBtn.addEventListener('click', stopTracking);
 els.wakeBtn.addEventListener('click', requestWakeLock);
 els.blackBtn.addEventListener('click', () => {
   els.blackScreen.classList.remove('hidden');
-  runShortcut(DIM_SHORTCUT_NAME);
 });
 els.testSoundBtn.addEventListener('click', () => playAlert('偏移，往回，佳', 'off'));
-els.dimShortcutBtn.addEventListener('click', () => runShortcut(DIM_SHORTCUT_NAME));
-els.brightShortcutBtn.addEventListener('click', () => runShortcut(BRIGHT_SHORTCUT_NAME));
 els.copyLogBtn.addEventListener('click', async () => {
   await navigator.clipboard.writeText(els.log.textContent).catch(() => {});
   log('已嘗試複製紀錄');
@@ -711,7 +695,6 @@ function beginHold() {
   holdTimer = setTimeout(() => {
     endHold(true);
     els.blackScreen.classList.add('hidden');
-    runShortcut(BRIGHT_SHORTCUT_NAME);
   }, 3000);
   const tick = () => {
     const pct = Math.min(1, (Date.now() - holdStart) / 3000);
@@ -738,6 +721,24 @@ els.blackScreen.addEventListener('mousedown', beginHold);
 els.blackScreen.addEventListener('mouseup', () => endHold(false));
 els.blackScreen.addEventListener('mouseleave', () => endHold(false));
 
+
+function shouldAutoStart() {
+  const params = new URLSearchParams(window.location.search);
+  return params.get('autostart') === '1' || params.get('start') === '1';
+}
+
+async function autoStartFromUrl() {
+  if (!shouldAutoStart()) return;
+  log('偵測到 URL 參數 autostart=1，嘗試自動開始定位。');
+  if (watchId != null) return;
+  try {
+    await startTracking();
+  } catch (err) {
+    log(`自動開始定位失敗：${err.message}。若 iOS 要求使用者互動，請按一次「開始定位」。`);
+    setStatus('請手動開始定位', 'status-warn');
+  }
+}
+
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('./service-worker.js').then(() => {
@@ -749,4 +750,5 @@ if ('serviceWorker' in navigator) {
 loadSettings();
 const restored = loadRouteFromStorage();
 if (!restored) draw();
-log('v7 口袋測試版：開始定位自動 Wake Lock；GPS 品質不再阻擋偏離警告；語音改短句；支援捷徑亮度按鈕。');
+log('v8 捷徑啟動版：支援 ?autostart=1；移除 PWA 內呼叫捷徑亮度功能；開始定位自動 Wake Lock。');
+setTimeout(autoStartFromUrl, 300);

@@ -6,15 +6,15 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="theme-color" content="#000000" />
-  <title>路線偏離測試器 v7</title>
+  <title>路線偏離測試器 v8</title>
   <link rel="manifest" href="manifest.webmanifest" />
-  <link rel="stylesheet" href="style.css?v=7" />
+  <link rel="stylesheet" href="style.css?v=8" />
 </head>
 <body>
   <main id="app">
     <section class="panel top-panel">
-      <h1>路線偏離測試器 <span class="version">v7 口袋測試版</span></h1>
-      <p class="hint">iPhone 11 Pro 實測用：GPX / KML 匯入、自動 Wake Lock、GPS 距離路線、簡短偏移語音、黑畫面口袋模式。</p>
+      <h1>路線偏離測試器 <span class="version">v8 捷徑啟動版</span></h1>
+      <p class="hint">iPhone 11 Pro 實測用：GPX / KML 匯入、捷徑 URL 快速啟動、自動 Wake Lock、GPS 距離路線、簡短偏移語音、黑畫面口袋模式。</p>
 
       <div class="row">
         <label class="file-btn">
@@ -28,8 +28,6 @@
       <div class="row">
         <button id="wakeBtn">重新啟用 Wake Lock</button>
         <button id="blackBtn">黑畫面省電模式</button>
-        <button id="dimShortcutBtn">捷徑：螢幕最暗</button>
-        <button id="brightShortcutBtn">捷徑：螢幕最亮</button>
         <button id="clearRouteBtn">清除已存路線</button>
       </div>
 
@@ -95,11 +93,11 @@
       <div id="blackStatus">定位中</div>
       <div id="blackDistance">距離路線：—</div>
       <div id="blackGuidance">提示：—</div>
-      <div class="unlock-note">長按 3 秒離開黑畫面，可觸發螢幕最亮捷徑</div>
+      <div class="unlock-note">長按 3 秒離開黑畫面</div>
       <div id="holdRing"></div>
     </div>
   </div>
 
-  <script src="app.js?v=7"></script>
+  <script src="app.js?v=8"></script>
 </body>
 </html>
