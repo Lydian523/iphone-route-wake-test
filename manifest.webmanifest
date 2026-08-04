@@ -1,1 +1,9 @@
-{"name":"日本旅行路線提醒器 v11","short_name":"旅行路線 v11","start_url":"./index.html","display":"standalone","background_color":"#000000","theme_color":"#000000","lang":"zh-Hant","icons":[{"src":"icon.svg","sizes":"any","type":"image/svg+xml","purpose":"any maskable"}]}
+{
+  "name":"iPhone 日本旅行路線提醒器 v11.2",
+  "short_name":"路線提醒器",
+  "start_url":"./index.html?v=11.2",
+  "display":"standalone",
+  "background_color":"#080808",
+  "theme_color":"#080808",
+  "icons":[{"src":"icon.svg","sizes":"any","type":"image/svg+xml","purpose":"any maskable"}]
+}
