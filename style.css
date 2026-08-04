@@ -53,3 +53,19 @@ body.trip-paused #tripSlack::before{content:'行程延誤中\A';white-space:pre;
 .direction-dot{position:absolute;left:25px;top:25px;width:26px;height:26px;border-radius:50%;background:#147cff;border:4px solid #fff;box-shadow:0 0 0 12px rgba(20,124,255,.27),0 0 14px #147cff;box-sizing:border-box}
 .current-direction.no-heading .direction-arrow,.current-direction.no-heading .direction-cone{opacity:.15}.current-direction.no-heading .direction-dot{background:#777;box-shadow:0 0 0 12px #7773}
 @media(min-width:781px){body.trip-paused #tripSlack{left:calc(50% - 195px);width:390px;top:22vh}}
+
+
+/* V11.2.3 餘裕狀態同步與純方向箭頭 */
+.current-direction{position:relative;width:76px;height:76px;filter:drop-shadow(0 3px 7px #000)}
+.current-direction .direction-arrow{position:absolute;left:23px;top:6px;width:30px;height:58px;transform-origin:15px 32px;transform:var(--heading);clip-path:polygon(50% 0,100% 70%,66% 61%,66% 100%,34% 100%,34% 61%,0 70%);background:#ffd166;border-radius:5px;filter:drop-shadow(0 0 4px #000) drop-shadow(0 0 5px rgba(255,209,102,.9))}
+.current-direction.no-heading .direction-arrow{opacity:.28}
+.direction-dot,.direction-cone{display:none!important}
+body.trip-paused #tripSlack.ok{border-color:#57c878;color:#7ff09c!important;background:rgba(14,40,22,.96)}
+body.trip-paused #tripSlack.warn{border-color:#e0b74d;color:#ffd166!important;background:rgba(47,39,14,.96)}
+body.trip-paused #tripSlack.bad{border-color:#dc6666;color:#ff8585!important;background:rgba(54,19,19,.96)}
+body.trip-paused #tripSlack.idle{border-color:#777;color:#ddd!important;background:rgba(28,28,28,.96)}
+.time-summary{border:2px solid transparent;transition:background-color .15s,border-color .15s,color .15s}
+.time-summary.ok{background:#17301f!important;border-color:#3f7b50!important}.time-summary.ok strong,.time-summary.ok span{color:#7ff09c!important}
+.time-summary.warn{background:#352d16!important;border-color:#79672f!important}.time-summary.warn strong,.time-summary.warn span{color:#ffd166!important}
+.time-summary.bad{background:#391d1d!important;border-color:#854545!important}.time-summary.bad strong,.time-summary.bad span{color:#ff8585!important}
+.time-summary.idle{background:#252525!important;border-color:#555!important}.time-summary.idle strong,.time-summary.idle span{color:#ccc!important}
