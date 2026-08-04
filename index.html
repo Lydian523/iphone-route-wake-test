@@ -1,104 +1,81 @@
 <!doctype html>
 <html lang="zh-Hant">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <meta name="apple-mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-  <meta name="theme-color" content="#000000" />
-  <title>路線偏離測試器 v10</title>
-  <link rel="manifest" href="manifest.webmanifest" />
-  <link rel="stylesheet" href="style.css?v=10" />
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="theme-color" content="#000000">
+  <title>日本旅行路線提醒器 v11</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="stylesheet" href="style.css?v=11">
 </head>
 <body>
-  <main id="app">
-    <section class="panel top-panel">
-      <h1>路線偏離測試器 <span class="version">v10 手勢版</span></h1>
-      <p class="hint">iPhone 11 Pro 實測用：GPX / KML 匯入、捷徑 URL 快速啟動、Wake Lock 手勢啟用（點一下螢幕）、停止自動釋放、GPS 距離路線、簡短偏移語音、黑畫面口袋模式。</p>
-
-      <div class="row">
-        <label class="file-btn">
-          匯入 GPX / KML
-          <input id="gpxInput" type="file" accept=".gpx,.kml,application/gpx+xml,application/vnd.google-earth.kml+xml,text/xml,application/xml" />
-        </label>
-        <button id="startBtn">開始定位</button>
-        <button id="stopBtn" disabled>停止</button>
-      </div>
-
-      <div class="row">
-        <button id="wakeBtn">點一下啟用 Wake Lock</button>
-        <button id="blackBtn">黑畫面省電模式</button>
-        <button id="clearRouteBtn">清除已存路線</button>
-      </div>
-
-      <div class="row compact">
-        <label>提醒聲
-          <select id="soundMode">
-            <option value="beep">嗶聲</option>
-            <option value="voice">語音</option>
-            <option value="both" selected>嗶聲 + 語音</option>
-          </select>
-        </label>
-        <button id="testSoundBtn">測試聲音</button>
-      </div>
-    </section>
-
-    <section class="panel grid">
-      <div class="card"><span>GPS 品質</span><strong id="gpsQuality">未開始</strong></div>
-      <div class="card"><span>GPS 精度</span><strong id="accuracy">—</strong></div>
-      <div class="card"><span>定位更新</span><strong id="fixAge">—</strong></div>
-      <div class="card"><span>距離路線</span><strong id="distance">—</strong></div>
-      <div class="card"><span>返回提示</span><strong id="guidance">—</strong></div>
-      <div class="card"><span>偏離判斷</span><strong id="status">未開始</strong></div>
-      <div class="card"><span>Wake Lock</span><strong id="wakeStatus">未啟用</strong></div>
-      <div class="card"><span>路線點數</span><strong id="pointCount">0</strong></div>
-      <div class="card"><span>已定位</span><strong id="fixCount">0</strong></div>
-      <div class="card"><span>速度</span><strong id="speed">—</strong></div>
-    </section>
-
-    <section class="panel gps-note">
-      <h2>GPS 狀況說明</h2>
-      <p id="gpsExplain">尚未開始定位。匯入路線後按「開始定位」。</p>
-      <p class="hint">GPS 差時仍會進行偏離測試，但語音會附帶「佳 / 不佳 / 嚴重誤差」，避免把定位飄移誤判成軟體錯誤。</p>
-    </section>
-
-    <section class="panel">
-      <canvas id="routeCanvas" width="800" height="480" aria-label="路線簡圖"></canvas>
-      <p class="hint">灰線是 GPX / KML 路線，白點是目前位置。這不是正式地圖，只是測試 GPS 與路線距離。</p>
-    </section>
-
-    <section class="panel">
-      <h2>測試門檻</h2>
-      <div class="thresholds">
-        <label>注意距離 <input id="warnM" type="number" value="30" min="1" /> 公尺</label>
-        <label>偏離距離 <input id="offM" type="number" value="50" min="1" /> 公尺</label>
-        <label>嚴重偏離 <input id="badM" type="number" value="80" min="1" /> 公尺</label>
-      </div>
-      <p class="hint">2 公尺只適合觀察 GPS 飄移，不建議當正式提醒門檻。</p>
-    </section>
-
-    <section class="panel">
-      <h2>紀錄</h2>
-      <pre id="log"></pre>
-      <div class="row">
-        <button id="copyLogBtn">複製紀錄</button>
-        <button id="clearLogBtn">清除紀錄</button>
-      </div>
-    </section>
-  </main>
-
-  <div id="blackScreen" class="hidden" role="button" aria-label="黑畫面省電模式">
-    <div class="black-info">
-      <div id="blackGps">GPS：—</div>
-      <div id="blackStatus">定位中</div>
-      <div id="blackDistance">距離路線：—</div>
-      <div id="blackGuidance">提示：—</div>
-      <div id="blackWake">Wake Lock：—</div>
-      <div class="unlock-note">長按 3 秒離開黑畫面</div>
-      <div id="holdRing"></div>
+<main>
+  <section class="panel top-panel">
+    <h1>日本旅行路線提醒器 <span class="version">v11 行程資料版</span></h1>
+    <p class="hint">保留 v10 的 GPS、偏離提醒、Wake Lock 手勢與黑畫面流程；新增景點清單、時間、備註、Google Maps、手動抵達及 JSON 備份。</p>
+    <div class="row">
+      <label class="file-btn">匯入 GPX / KML<input id="routeInput" type="file" accept=".gpx,.kml,text/xml,application/xml"></label>
+      <button id="startBtn">開始定位</button><button id="stopBtn" disabled>停止</button>
     </div>
-  </div>
+    <div class="row">
+      <button id="wakeBtn">點一下啟用 Wake Lock</button><button id="blackBtn">黑畫面省電模式</button><button id="clearRouteBtn">清除路線</button>
+    </div>
+  </section>
 
-  <script src="app.js?v=10"></script>
+  <section class="panel grid">
+    <div class="card"><span>GPS 品質</span><strong id="gpsQuality">未開始</strong></div>
+    <div class="card"><span>GPS 精度</span><strong id="accuracy">—</strong></div>
+    <div class="card"><span>定位更新</span><strong id="fixAge">—</strong></div>
+    <div class="card"><span>距離路線</span><strong id="distance">—</strong></div>
+    <div class="card"><span>偏離判斷</span><strong id="status">未開始</strong></div>
+    <div class="card"><span>Wake Lock</span><strong id="wakeStatus">未啟用</strong></div>
+    <div class="card"><span>目前景點</span><strong id="currentStop">—</strong></div>
+    <div class="card"><span>下一景點</span><strong id="nextStop">—</strong></div>
+  </section>
+
+  <section class="panel">
+    <h2>行程資料</h2>
+    <div class="row">
+      <button id="addStopBtn">新增景點</button>
+      <button id="exportBtn">匯出備份</button>
+      <label class="file-btn">匯入備份<input id="backupInput" type="file" accept=".json,application/json"></label>
+      <button id="resetTripBtn">重設抵達狀態</button>
+    </div>
+    <p class="hint">GPX 的 wpt 與 KML 的 Point 會自動建立景點。只有路線、沒有景點時，可手動新增。</p>
+    <div id="stopList" class="stop-list"></div>
+  </section>
+
+  <section class="panel">
+    <h2>路線簡圖</h2>
+    <canvas id="routeCanvas" width="800" height="480"></canvas>
+    <p class="hint">灰線是路線、白點是目前位置、黃色點是景點。此圖不是正式地圖。</p>
+  </section>
+
+  <section class="panel">
+    <h2>偏離門檻</h2>
+    <div class="thresholds">
+      <label>注意 <input id="warnM" type="number" value="30" min="1"> 公尺</label>
+      <label>偏離 <input id="offM" type="number" value="50" min="1"> 公尺</label>
+      <label>嚴重 <input id="badM" type="number" value="80" min="1"> 公尺</label>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>紀錄</h2>
+    <pre id="log"></pre>
+    <div class="row"><button id="copyLogBtn">複製紀錄</button><button id="clearLogBtn">清除紀錄</button></div>
+  </section>
+</main>
+
+<div id="blackScreen" class="hidden">
+  <div class="black-info">
+    <div id="blackGps">GPS：—</div><div id="blackStatus">定位中</div><div id="blackDistance">距離路線：—</div>
+    <div id="blackStop">下一站：—</div><div id="blackWake">Wake Lock：—</div>
+    <div class="unlock-note">長按 3 秒離開黑畫面</div><div id="holdRing"></div>
+  </div>
+</div>
+<script src="app.js?v=11"></script>
 </body>
 </html>

@@ -1,17 +1,1 @@
-{
-  "name": "路線偏離v8器 v8",
-  "short_name": "偏離v8",
-  "start_url": "./index.html",
-  "display": "fullscreen",
-  "background_color": "#000000",
-  "theme_color": "#000000",
-  "orientation": "portrait",
-  "icons": [
-    {
-      "src": "icon.svg",
-      "sizes": "any",
-      "type": "image/svg+xml",
-      "purpose": "any maskable"
-    }
-  ]
-}
+{"name":"日本旅行路線提醒器 v11","short_name":"旅行路線 v11","start_url":"./index.html","display":"standalone","background_color":"#000000","theme_color":"#000000","lang":"zh-Hant","icons":[{"src":"icon.svg","sizes":"any","type":"image/svg+xml","purpose":"any maskable"}]}

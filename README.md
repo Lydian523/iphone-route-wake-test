@@ -1,43 +1,37 @@
-# 路線偏離測試器 v10 手勢版
+# 日本旅行路線提醒器 v11 行程資料版
 
-## 這一版解決的問題
+## v11 新增
 
-v9 的捷徑 autostart 啟動後，Wake Lock 一律失敗（`NotAllowedError Permission was denied`）。
-實測確認根本原因：**iOS WebKit 只在真實使用者手勢（點擊 / 觸碰）中放行
-`navigator.wakeLock.request()`**。定位權限對話框、GPS 回呼、setTimeout 重試
-都不算手勢，所以 v9 的「第一次 GPS 成功後延遲重試」在 iOS 上注定全部被拒。
+- 從 GPX `wpt` 或 KML `Point` 建立景點。
+- 可手動新增、刪除、排序景點。
+- 每站可填預計抵達時間、停留分鐘、座標與備註。
+- 每站可開啟 Google Maps。
+- 「我已抵達」會記錄時間並推進目前景點。
+- 行程資料自動保存於瀏覽器本機。
+- 可匯出／匯入 v11 JSON 備份。
 
-## v10 的做法
+## 保留的 v10 核心
 
-- autostart 第一次 GPS 成功後，仍會先試一次 Wake Lock（Android / 桌面通常放行）。
-- iOS 被拒時，不再空跑重試，改掛一個**一次性的全域 pointerdown 監聽器**：
-  點螢幕任何地方一下，就在那個手勢裡當場取得 Wake Lock。
-- Wake Lock 卡片會閃爍顯示「點一下螢幕啟用」，黑畫面內也會顯示 Wake Lock 狀態。
-- 按「黑畫面省電模式」按鈕時，若尚未取得 Wake Lock 會順手先搶再進黑畫面。
-- 黑畫面內的任何觸碰（含誤觸）若發現 Wake Lock 掉了，也會順手補搶。
-- 「回到前景」與「release 後」的自動重試保留（縮減為 3 次），重試耗盡後
-  同樣轉入「等一次觸碰」模式。
-- 手動「開始定位」與「點一下啟用 Wake Lock」按鈕行為不變。
+- GPX／KML 路線匯入與保存。
+- `watchPosition` 高精度定位。
+- 距離路線與偏離門檻。
+- 偏離與回到路線語音。
+- iOS 真實觸碰取得 Wake Lock。
+- 黑畫面口袋模式，長按 3 秒離開。
+- 停止定位時釋放 Wake Lock。
+- `?autostart=1` 捷徑啟動。
 
-## 實際使用流程
+## 部署
 
-1. 捷徑打開 `https://你的網址/index.html?autostart=1`
-2. 自動開始定位（可能需先允許定位權限）
-3. 畫面顯示「點一下螢幕啟用」→ 你反正要按「黑畫面省電模式」，那一下點擊
-   就會把 Wake Lock 帶起來
-4. 進黑畫面，放口袋
+將資料夾內全部檔案放到 GitHub Pages 根目錄。更新後建議用：
 
-## 注意事項
+`index.html?v=11`
 
-- **低耗電模式要關閉**：低耗電模式下 iOS 可能直接拒絕 Wake Lock，或強制
-  30 秒自動鎖屏，會讓人誤以為程式壞了。
-- 若加到主畫面當獨立 PWA 使用：iOS 18.4 之前的版本有系統 bug，
-  Home Screen Web App 內 Wake Lock 完全無法運作（Safari 分頁不受影響）。
-- 更新後若行為仍是舊版，通常是 Service Worker 快取，請重新整理兩次或
-  刪除主畫面圖示重加。
+若仍顯示舊版，重新整理兩次；必要時刪除主畫面圖示後重新加入。
 
-## 捷徑 URL 範例
+## 目前限制
 
-```text
-https://lydian523.github.io/iphone-route-wake-test/index.html?autostart=1
-```
+- v11 尚未加入遲到自動推估。
+- 景點抵達採手動確認。
+- PWA 鎖螢幕或切到背景後，定位仍可能被 iOS 暫停。
+- 黑畫面是前景省電模式，不是真正背景執行。
